@@ -1,0 +1,23 @@
+# Example kerberoskeepalive config. Copy to ~/.config/kerberoskeepalive/config.yaml
+# (or pass --config) and adjust for your environment.
+
+# Optional: forwarded as KRB5_CONFIG to kinit if set. Leave blank to use
+# kinit's default (/etc/krb5.conf).
+krb5_conf_path: ""
+
+daemon:
+  # How often the daemon checks whether any profile needs refreshing.
+  # Changing this requires restarting the daemon (`daemon uninstall` then
+  # `daemon install` again); profiles/thresholds below can be edited live.
+  poll_interval: 60s
+
+profiles:
+  - name: corp
+    principal: jdoe@CORP.EXAMPLE.COM
+    keychain:
+      # Must already exist in your login keychain, e.g. created via:
+      #   security add-generic-password -a jdoe -s KerberosKeepAlive-corp -w
+      service: KerberosKeepAlive-corp
+      account: jdoe
+    ccache_path: /Users/jdoe/.krb5cc/corp
+    refresh_threshold: 30m
