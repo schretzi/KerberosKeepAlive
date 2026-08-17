@@ -43,6 +43,9 @@ func Acquire(ctx context.Context, principal, ccachePath, password, krb5ConfPath 
 	ctx, cancel := context.WithTimeout(ctx, acquireTimeout)
 	defer cancel()
 
+	// #nosec G204 -- kinitPath is a hardcoded constant; ccachePath/principal
+	// come from the user's own local config, passed as argv (no shell), so
+	// there's no injection surface.
 	cmd := exec.CommandContext(ctx, kinitPath, "--password-file=STDIN", "-c", ccachePath, principal)
 	if krb5ConfPath != "" {
 		cmd.Env = append(os.Environ(), "KRB5_CONFIG="+krb5ConfPath)

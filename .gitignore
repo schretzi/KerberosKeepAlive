@@ -1,5 +1,6 @@
 # Build artifacts
 /kerberoskeepalive
+/dist/
 
 # OS
 .DS_Store

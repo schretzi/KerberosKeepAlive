@@ -24,7 +24,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tPRINCIPAL\tSTATUS\tEXPIRES\tREMAINING\tCCACHE")
+		_, _ = fmt.Fprintln(w, "NAME\tPRINCIPAL\tSTATUS\tEXPIRES\tREMAINING\tCCACHE")
 
 		var anyBad bool
 		for _, p := range selected {
@@ -46,9 +46,9 @@ var statusCmd = &cobra.Command{
 				expires = st.EndTime.Local().Format(time.RFC3339)
 				remaining = st.Remaining.Round(time.Second).String()
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", p.Name, p.Principal, state, expires, remaining, p.CCachePath)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", p.Name, p.Principal, state, expires, remaining, p.CCachePath)
 		}
-		w.Flush()
+		_ = w.Flush()
 
 		if anyBad {
 			return fmt.Errorf("one or more profiles are missing, invalid, or expired")

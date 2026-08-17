@@ -27,7 +27,7 @@ var daemonInstallCmd = &cobra.Command{
 		if err := launchagent.Install(configPath); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "LaunchAgent installed and loaded.")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "LaunchAgent installed and loaded.")
 		return nil
 	},
 }
@@ -39,7 +39,7 @@ var daemonUninstallCmd = &cobra.Command{
 		if err := launchagent.Uninstall(); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "LaunchAgent unloaded and removed.")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "LaunchAgent unloaded and removed.")
 		return nil
 	},
 }

@@ -69,18 +69,37 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 
 const defaultPollInterval = 60 * time.Second
 
-// DefaultPath returns "~/.config/kerberoskeepalive/config.yaml".
+// DefaultPath returns the conventional config path, written with a literal
+// leading "~" so it stays portable in --help output and generated docs
+// (ExpandPath resolves it against the real home directory at use time).
 func DefaultPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".config", "kerberoskeepalive", "config.yaml")
+	return "~/.config/kerberoskeepalive/config.yaml"
 }
 
-// Load reads, parses and validates the config file at path.
+// ExpandPath resolves a leading "~" or "~/..." in path against the current
+// user's home directory. Paths without a leading "~" are returned unchanged.
+func ExpandPath(path string) (string, error) {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("determining home directory: %w", err)
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, path[2:]), nil
+}
+
+// Load reads, parses and validates the config file at path (which may start
+// with "~/").
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	path, err := ExpandPath(path)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the user's own --config flag, reading it is the point
 	if err != nil {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}

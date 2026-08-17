@@ -33,10 +33,10 @@ func runAcquireAll(cmd *cobra.Command) error {
 	for _, p := range selected {
 		if err := manager.AcquireProfile(cmd.Context(), cfg, p); err != nil {
 			failed++
-			fmt.Fprintln(cmd.ErrOrStderr(), err)
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), err)
 			continue
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "profile %s: ticket acquired\n", p.Name)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "profile %s: ticket acquired\n", p.Name)
 	}
 	if failed > 0 {
 		return fmt.Errorf("%d of %d profile(s) failed", failed, len(selected))

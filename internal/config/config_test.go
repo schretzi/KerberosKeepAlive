@@ -141,6 +141,33 @@ profiles:
 	}
 }
 
+func TestExpandPath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir: %v", err)
+	}
+
+	cases := []struct {
+		in, want string
+	}{
+		{"~/.config/kerberoskeepalive/config.yaml", filepath.Join(home, ".config/kerberoskeepalive/config.yaml")},
+		{"~", home},
+		{"/absolute/path", "/absolute/path"},
+		{"relative/path", "relative/path"},
+		{"~user/not-supported", "~user/not-supported"}, // only bare "~" and "~/" are expanded
+	}
+	for _, tc := range cases {
+		got, err := ExpandPath(tc.in)
+		if err != nil {
+			t.Errorf("ExpandPath(%q) returned error: %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("ExpandPath(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestSelectProfiles(t *testing.T) {
 	cfg, err := Load(writeTemp(t, `
 profiles:

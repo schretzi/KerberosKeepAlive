@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"kerberoskeepalive/internal/config"
 )
 
 const plistTemplateSrc = `<?xml version="1.0" encoding="UTF-8"?>
@@ -105,6 +107,9 @@ func guiDomain() string {
 }
 
 func launchctl(args ...string) (string, error) {
+	// #nosec G204 -- fixed binary name resolved via PATH; args are our own
+	// constructed strings (domain/label/plist path), never a shell string,
+	// so there's no injection surface.
 	cmd := exec.Command("launchctl", args...)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
@@ -125,7 +130,11 @@ func Install(configPath string) error {
 	if resolved, err := filepath.EvalSymlinks(binPath); err == nil {
 		binPath = resolved
 	}
-	absConfigPath, err := filepath.Abs(configPath)
+	expandedConfigPath, err := config.ExpandPath(configPath)
+	if err != nil {
+		return fmt.Errorf("resolving config path %s: %w", configPath, err)
+	}
+	absConfigPath, err := filepath.Abs(expandedConfigPath)
 	if err != nil {
 		return fmt.Errorf("resolving config path %s: %w", configPath, err)
 	}
@@ -147,7 +156,7 @@ func Install(configPath string) error {
 		LogDir:     logDir(home),
 	}
 
-	if err := os.MkdirAll(data.LogDir, 0o755); err != nil {
+	if err := os.MkdirAll(data.LogDir, 0o750); err != nil {
 		return fmt.Errorf("creating log directory %s: %w", data.LogDir, err)
 	}
 
@@ -160,10 +169,10 @@ func Install(configPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(plistPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(plistPath), 0o750); err != nil {
 		return fmt.Errorf("creating LaunchAgents directory: %w", err)
 	}
-	if err := os.WriteFile(plistPath, buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(plistPath, buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("writing plist %s: %w", plistPath, err)
 	}
 
