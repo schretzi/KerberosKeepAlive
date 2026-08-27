@@ -73,12 +73,81 @@ profiles:
 	}
 }
 
+const minimalProfile = `
+profiles:
+  - name: corp
+    principal: jdoe@CORP.EXAMPLE.COM
+    keychain: {service: s, account: a}
+    ccache_path: /tmp/ccache
+    refresh_threshold: 10m
+`
+
+func TestLoadDefaultsLog(t *testing.T) {
+	cfg, err := Load(writeTemp(t, minimalProfile))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	got := cfg.Daemon.Log
+	if got.Path != DefaultLogPath() {
+		t.Errorf("log.path = %q, want %q", got.Path, DefaultLogPath())
+	}
+	if got.MaxSizeMB != defaultLogMaxSizeMB {
+		t.Errorf("log.max_size_mb = %d, want %d", got.MaxSizeMB, defaultLogMaxSizeMB)
+	}
+	if got.MaxBackups != defaultLogMaxBackups {
+		t.Errorf("log.max_backups = %d, want %d", got.MaxBackups, defaultLogMaxBackups)
+	}
+	if got.MaxAgeDays != defaultLogMaxAgeDays {
+		t.Errorf("log.max_age_days = %d, want %d", got.MaxAgeDays, defaultLogMaxAgeDays)
+	}
+	if got.Compress == nil || !*got.Compress {
+		t.Errorf("log.compress = %v, want true", got.Compress)
+	}
+}
+
+// compress defaults to true, so an explicit `false` must survive - the
+// reason LogConfig.Compress is a *bool rather than a bool.
+func TestLoadLogCompressFalseIsRespected(t *testing.T) {
+	cfg, err := Load(writeTemp(t, `
+daemon:
+  log:
+    compress: false
+`+minimalProfile))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Daemon.Log.Compress == nil || *cfg.Daemon.Log.Compress {
+		t.Errorf("log.compress = %v, want false", cfg.Daemon.Log.Compress)
+	}
+}
+
+func TestLoadLogOverrides(t *testing.T) {
+	cfg, err := Load(writeTemp(t, `
+daemon:
+  log:
+    path: /tmp/custom.log
+    max_size_mb: 1
+    max_backups: 9
+    max_age_days: 7
+`+minimalProfile))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	got := cfg.Daemon.Log
+	if got.Path != "/tmp/custom.log" || got.MaxSizeMB != 1 || got.MaxBackups != 9 || got.MaxAgeDays != 7 {
+		t.Errorf("log = %+v, want the configured overrides", got)
+	}
+}
+
 func TestValidateErrors(t *testing.T) {
 	cases := []struct {
 		name string
 		yaml string
 	}{
 		{"no profiles", `profiles: []`},
+		{"negative log max_size_mb", "daemon:\n  log:\n    max_size_mb: -1\n" + minimalProfile},
+		{"negative log max_backups", "daemon:\n  log:\n    max_backups: -1\n" + minimalProfile},
+		{"negative log max_age_days", "daemon:\n  log:\n    max_age_days: -1\n" + minimalProfile},
 		{"missing name", `
 profiles:
   - principal: jdoe@REALM

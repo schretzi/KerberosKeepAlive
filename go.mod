@@ -6,6 +6,7 @@ require (
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/keybase/go-keychain v0.0.1
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 

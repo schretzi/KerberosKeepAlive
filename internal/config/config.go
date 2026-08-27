@@ -19,7 +19,19 @@ type Config struct {
 
 // DaemonConfig configures the `daemon` subcommand's poll loop.
 type DaemonConfig struct {
-	PollInterval Duration `yaml:"poll_interval"`
+	PollInterval Duration  `yaml:"poll_interval"`
+	Log          LogConfig `yaml:"log"`
+}
+
+// LogConfig configures the daemon's own rotating log file. This is separate
+// from the launchd-captured stdout/stderr files, which only ever receive
+// crash output (panics, and failures before logging is set up).
+type LogConfig struct {
+	Path       string `yaml:"path"`
+	MaxSizeMB  int    `yaml:"max_size_mb"`
+	MaxBackups int    `yaml:"max_backups"`
+	MaxAgeDays int    `yaml:"max_age_days"`
+	Compress   *bool  `yaml:"compress"`
 }
 
 // Profile is one managed Kerberos ticket: where its password comes from and
@@ -67,13 +79,25 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-const defaultPollInterval = 60 * time.Second
+const (
+	defaultPollInterval = 60 * time.Second
+
+	defaultLogMaxSizeMB  = 5
+	defaultLogMaxBackups = 3
+	defaultLogMaxAgeDays = 28
+)
 
 // DefaultPath returns the conventional config path, written with a literal
 // leading "~" so it stays portable in --help output and generated docs
 // (ExpandPath resolves it against the real home directory at use time).
 func DefaultPath() string {
 	return "~/.config/kerberoskeepalive/config.yaml"
+}
+
+// DefaultLogPath returns the conventional daemon log path, written with a
+// literal leading "~" for the same reason as DefaultPath.
+func DefaultLogPath() string {
+	return "~/Library/Logs/KerberosKeepAlive/daemon.log"
 }
 
 // ExpandPath resolves a leading "~" or "~/..." in path against the current
@@ -107,17 +131,50 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}
-	if cfg.Daemon.PollInterval.Duration() == 0 {
-		cfg.Daemon.PollInterval = Duration(defaultPollInterval)
-	}
+	cfg.applyDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config %s: %w", path, err)
 	}
 	return &cfg, nil
 }
 
+// applyDefaults fills in unset optional fields. Zero means "not configured"
+// for every field here, so an explicit 0 in YAML is indistinguishable from
+// omission — deliberate, since 0 is not a useful value for any of them.
+// Compress is a *bool precisely because its default is true.
+func (c *Config) applyDefaults() {
+	if c.Daemon.PollInterval.Duration() == 0 {
+		c.Daemon.PollInterval = Duration(defaultPollInterval)
+	}
+	if c.Daemon.Log.Path == "" {
+		c.Daemon.Log.Path = DefaultLogPath()
+	}
+	if c.Daemon.Log.MaxSizeMB == 0 {
+		c.Daemon.Log.MaxSizeMB = defaultLogMaxSizeMB
+	}
+	if c.Daemon.Log.MaxBackups == 0 {
+		c.Daemon.Log.MaxBackups = defaultLogMaxBackups
+	}
+	if c.Daemon.Log.MaxAgeDays == 0 {
+		c.Daemon.Log.MaxAgeDays = defaultLogMaxAgeDays
+	}
+	if c.Daemon.Log.Compress == nil {
+		compress := true
+		c.Daemon.Log.Compress = &compress
+	}
+}
+
 // Validate checks the config for structural and semantic errors.
 func (c *Config) Validate() error {
+	if c.Daemon.Log.MaxSizeMB < 0 {
+		return fmt.Errorf("daemon.log.max_size_mb must be >= 0")
+	}
+	if c.Daemon.Log.MaxBackups < 0 {
+		return fmt.Errorf("daemon.log.max_backups must be >= 0")
+	}
+	if c.Daemon.Log.MaxAgeDays < 0 {
+		return fmt.Errorf("daemon.log.max_age_days must be >= 0")
+	}
 	if len(c.Profiles) == 0 {
 		return fmt.Errorf("no profiles configured")
 	}

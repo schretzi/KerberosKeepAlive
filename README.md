@@ -104,9 +104,8 @@ the binary you ran the command from, and at the `--config` path you passed
 (so pass `--config` here if you don't use the default). Re-running the command
 is safe — it unloads and reloads.
 
-From then on `kerberoskeepalive daemon` starts at every login, is restarted by
-launchd if it exits non-zero, and writes to
-`~/Library/Logs/KerberosKeepAlive/daemon.{out,err}.log`.
+From then on `kerberoskeepalive daemon` starts at every login and is restarted
+by launchd if it exits non-zero. See [Logs](#logs) for where it writes.
 
 It is a LaunchAgent rather than a system-wide LaunchDaemon on purpose: the
 daemon needs your login session's Keychain and credential cache, which a root
@@ -125,6 +124,32 @@ kerberoskeepalive daemon uninstall
 `brew uninstall kerberoskeepalive` also runs this automatically, so the agent
 is never left pointing at a deleted binary. `brew uninstall --zap
 kerberoskeepalive` additionally removes your config and logs.
+
+### Logs
+
+Everything lives in `~/Library/Logs/KerberosKeepAlive/`:
+
+| File | Contents |
+| --- | --- |
+| `daemon.log` | The daemon's own log — this is the one to read. Rotated. |
+| `daemon-<timestamp>.log.gz` | Rotated older logs. |
+| `launchd.err.log` | Crash capture only: panics, and failures before logging starts. Normally empty. |
+| `launchd.out.log` | Same, for stdout. Normally empty. |
+
+```sh
+tail -f ~/Library/Logs/KerberosKeepAlive/daemon.log
+```
+
+`daemon.log` rotates because a KDC you can't reach — VPN down, laptop off the
+corporate network — logs two lines every poll for as long as that lasts. The
+defaults keep at most 5 MB plus 3 gzipped backups, dropping anything older
+than 28 days; all four knobs are configurable under `daemon.log` in the config
+(see [`testdata/config.example.yaml`](testdata/config.example.yaml)). Like
+`poll_interval`, changes take effect on daemon restart.
+
+If you installed the LaunchAgent before this was added, re-run
+`kerberoskeepalive daemon install` to pick up the new plist, and delete the
+stale `daemon.{out,err}.log` files.
 
 ## Development
 

@@ -17,8 +17,8 @@ import (
 // expired, or within their refresh threshold, until it receives
 // SIGTERM/SIGINT or ctx is canceled. The config file (profiles and
 // thresholds) is re-read at the start of every poll cycle so edits take
-// effect without a restart; the poll interval itself is fixed at startup —
-// changing daemon.poll_interval requires a restart.
+// effect without a restart; the poll interval and log settings are fixed at
+// startup — changing daemon.poll_interval or daemon.log requires a restart.
 func Run(ctx context.Context, configPath string, profileNames []string) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -31,7 +31,15 @@ func Run(ctx context.Context, configPath string, profileNames []string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("daemon starting: %d profile(s), poll_interval=%s", len(selected), cfg.Daemon.PollInterval.Duration())
+
+	closeLog, err := setupLogging(cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = closeLog.Close() }()
+
+	log.Printf("daemon starting: %d profile(s), poll_interval=%s, log=%s",
+		len(selected), cfg.Daemon.PollInterval.Duration(), cfg.Daemon.Log.Path)
 
 	pollAll(ctx, cfg, selected)
 
@@ -70,7 +78,9 @@ func pollAll(ctx context.Context, cfg *config.Config, selected []config.Profile)
 		}
 		log.Printf("profile %s: refreshing (exists=%v expired=%v remaining=%s)", p.Name, st.Exists, st.Expired, st.Remaining.Round(time.Second))
 		if err := manager.AcquireProfile(ctx, cfg, p); err != nil {
-			log.Printf("profile %s: %v", p.Name, err)
+			// AcquireProfile already prefixes "profile <name>: ", so adding
+			// it here too would double it.
+			log.Print(err)
 			continue
 		}
 		log.Printf("profile %s: ticket acquired", p.Name)

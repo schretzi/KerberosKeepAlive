@@ -43,11 +43,14 @@ const plistTemplateSrc = `<?xml version="1.0" encoding="UTF-8"?>
     <key>WorkingDirectory</key>
     <string>{{.HomeDir | xmlesc}}</string>
 
+    <!-- Crash capture only. The daemon writes its own rotating log (see
+         daemon.log.path in the config); these files receive just panics and
+         anything emitted before logging is set up, so they stay tiny. -->
     <key>StandardOutPath</key>
-    <string>{{.LogDir | xmlesc}}/daemon.out.log</string>
+    <string>{{.LogDir | xmlesc}}/launchd.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>{{.LogDir | xmlesc}}/daemon.err.log</string>
+    <string>{{.LogDir | xmlesc}}/launchd.err.log</string>
 
     <key>ProcessType</key>
     <string>Background</string>
