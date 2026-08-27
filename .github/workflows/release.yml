@@ -28,3 +28,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Write access to schretzi/homebrew-tap, which GITHUB_TOKEN does
+          # not cover. Required by the homebrew_casks block in
+          # .goreleaser.yaml.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

@@ -18,7 +18,11 @@ cache (ccache) file that other Kerberos-aware tools can consume via
 
 ## Installation
 
-Download a prebuilt binary from the [Releases](../../releases) page, or
+```sh
+brew install schretzi/tap/kerberoskeepalive
+```
+
+Or download a prebuilt binary from the [Releases](../../releases) page, or
 build from source:
 
 ```sh
@@ -27,8 +31,11 @@ cd KerberosKeepAlive
 make build
 ```
 
-This produces `./kerberoskeepalive`. Move it wherever you like on your
-`PATH`, e.g. `/usr/local/bin`.
+The last option produces `./kerberoskeepalive`. Move it wherever you like on
+your `PATH`, e.g. `/usr/local/bin`.
+
+Installing only puts the binary in place — it does **not** start anything.
+See [Running in the background](#running-in-the-background) below.
 
 ## Configuration
 
@@ -39,7 +46,7 @@ mkdir -p ~/.config/kerberoskeepalive
 cp testdata/config.example.yaml ~/.config/kerberoskeepalive/config.yaml
 ```
 
-Each profile needs a Kerberos principal, a reference to an *existing*
+Each profile needs a Kerberos principal, a reference to an _existing_
 Keychain generic-password item (service + account), and a path to write its
 credential cache to. Create the Keychain item yourself, e.g.:
 
@@ -78,6 +85,46 @@ defaults to all configured profiles).
 
 Full command reference: [`docs/kerberoskeepalive.md`](docs/kerberoskeepalive.md)
 (generated from the CLI itself — see below).
+
+## Running in the background
+
+Nothing is installed or started automatically — neither `brew install` nor
+running any command sets up background refreshing. That is a deliberate,
+explicit step:
+
+```sh
+kerberoskeepalive daemon install
+```
+
+This validates your config (refusing to install if it's invalid), then writes
+a **per-user LaunchAgent** to
+`~/Library/LaunchAgents/com.<username>.kerberoskeepalive.plist` and loads it
+with `launchctl bootstrap gui/<uid>`. The plist points at the absolute path of
+the binary you ran the command from, and at the `--config` path you passed
+(so pass `--config` here if you don't use the default). Re-running the command
+is safe — it unloads and reloads.
+
+From then on `kerberoskeepalive daemon` starts at every login, is restarted by
+launchd if it exits non-zero, and writes to
+`~/Library/Logs/KerberosKeepAlive/daemon.{out,err}.log`.
+
+It is a LaunchAgent rather than a system-wide LaunchDaemon on purpose: the
+daemon needs your login session's Keychain and credential cache, which a root
+daemon cannot reach.
+
+Run `kerberoskeepalive init` interactively **before** installing the agent, so
+you can grant the macOS Keychain access prompt while there's a UI to answer
+it — the daemon runs unattended and cannot.
+
+To stop and remove it:
+
+```sh
+kerberoskeepalive daemon uninstall
+```
+
+`brew uninstall kerberoskeepalive` also runs this automatically, so the agent
+is never left pointing at a deleted binary. `brew uninstall --zap
+kerberoskeepalive` additionally removes your config and logs.
 
 ## Development
 
@@ -124,14 +171,8 @@ git push origin v0.1.0
 then go to the repo's **Actions → Release → Run workflow**, and select that
 tag in the branch/tag dropdown before running it.
 
-## AI usage
+## AI usage This project's design and implementation were done collaboratively with [Claude Code](https://claude.com/claude-code) (Anthropic's AI coding assistant), directed and reviewed by the repository owner throughout: architecture decisions (e.g. shelling out to `kinit` instead of hand-rolling a Kerberos credential-cache writer, LaunchAgent vs LaunchDaemon for Keychain access) were made jointly after the AI researched the actual library/OS
 
-This project's design and implementation were done collaboratively with
-[Claude Code](https://claude.com/claude-code) (Anthropic's AI coding
-assistant), directed and reviewed by the repository owner throughout:
-architecture decisions (e.g. shelling out to `kinit` instead of hand-rolling
-a Kerberos credential-cache writer, LaunchAgent vs LaunchDaemon for Keychain
-access) were made jointly after the AI researched the actual library/OS
 behavior involved, code was written by the AI against an explicit,
 human-approved plan, and functionality was verified end-to-end against the
 real `kinit`/`klist`/Keychain/launchd on this machine rather than assumed to

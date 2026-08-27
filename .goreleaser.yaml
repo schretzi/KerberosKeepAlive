@@ -34,6 +34,7 @@ archives:
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     files:
       - README.md
+      - LICENSE
       - testdata/config.example.yaml
       - docs/*
 
@@ -48,9 +49,78 @@ changelog:
       - "^test:"
       - "^chore:"
 
+# Casks, not formulas: goreleaser deprecated `brews` for binary releases in
+# favour of `homebrew_casks`, which is what Homebrew now expects for
+# distributing pre-compiled binaries.
+homebrew_casks:
+  - name: kerberoskeepalive
+    # Publishes to github.com/schretzi/homebrew-tap, so users can
+    # `brew install schretzi/tap/kerberoskeepalive`. That repository must
+    # exist, and the release workflow needs a HOMEBREW_TAP_TOKEN secret with
+    # write access to it (the default GITHUB_TOKEN only covers this repo).
+    repository:
+      owner: schretzi
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/schretzi/KerberosKeepAlive
+    description: Keep macOS Kerberos tickets refreshed from Keychain-stored passwords
+    license: MIT
+
+    binaries:
+      - kerberoskeepalive
+
+    commit_author:
+      name: goreleaser
+      email: noreply@github.com
+
+    caveats: |
+      This only installs the binary. To have tickets refreshed automatically,
+      configure a profile and then load the LaunchAgent:
+
+        kerberoskeepalive init
+        kerberoskeepalive daemon install
+
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            # The release binaries are not notarized, so Gatekeeper would
+            # otherwise refuse to run them after a browser-less download.
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kerberoskeepalive"]
+          end
+      pre:
+        uninstall: |
+          # The LaunchAgent plist references this binary by absolute path, so
+          # leaving it loaded would make launchd retry a deleted executable
+          # forever. The agent's label is per-user
+          # (com.<username>.kerberoskeepalive), so a static `launchctl:`
+          # stanza can't name it - let the binary boot itself out instead.
+          system_command "#{staged_path}/kerberoskeepalive",
+                         args: ["daemon", "uninstall"],
+                         must_succeed: false
+
+    # `brew uninstall` leaves these behind; `brew uninstall --zap` clears
+    # them. Credential caches are not listed: their paths come from the
+    # user's config, so they can be anywhere.
+    zap:
+      trash:
+        - ~/.config/kerberoskeepalive
+        - ~/Library/Logs/KerberosKeepAlive
+        # Fallback in case the uninstall hook above never ran.
+        - ~/Library/LaunchAgents/com.*.kerberoskeepalive.plist
+
 release:
   github:
     owner: schretzi
     name: KerberosKeepAlive
   draft: false
   prerelease: auto
+  footer: |
+    ## Install
+
+    ```sh
+    brew install schretzi/tap/kerberoskeepalive
+    ```
+
+    Or grab a binary from the assets below.
