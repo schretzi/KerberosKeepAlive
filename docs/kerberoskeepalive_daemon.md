@@ -2,6 +2,14 @@
 
 Run in the foreground, keeping configured tickets refreshed (invoked by launchd)
 
+### Synopsis
+
+Poll the configured profiles and reacquire any ticket close to expiry, until
+interrupted.
+
+This is the process the LaunchAgent runs; it is not how you install or control
+that agent. Use `kerberoskeepalive service` for the launchd job.
+
 ```
 kerberoskeepalive daemon [flags]
 ```
@@ -22,6 +30,4 @@ kerberoskeepalive daemon [flags]
 ### SEE ALSO
 
 * [kerberoskeepalive](kerberoskeepalive.md)	 - Manage and keep macOS Kerberos tickets alive
-* [kerberoskeepalive daemon install](kerberoskeepalive_daemon_install.md)	 - Generate and load a LaunchAgent that runs the daemon at login
-* [kerberoskeepalive daemon uninstall](kerberoskeepalive_daemon_uninstall.md)	 - Unload and remove the LaunchAgent
 

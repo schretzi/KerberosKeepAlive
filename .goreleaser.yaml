@@ -93,11 +93,9 @@ homebrew_casks:
         uninstall: |
           # The LaunchAgent plist references this binary by absolute path, so
           # leaving it loaded would make launchd retry a deleted executable
-          # forever. The agent's label is per-user
-          # (com.<username>.kerberoskeepalive), so a static `launchctl:`
-          # stanza can't name it - let the binary boot itself out instead.
+          # forever. Boot it out and remove the plist first.
           system_command "#{staged_path}/kerberoskeepalive",
-                         args: ["daemon", "uninstall"],
+                         args: ["service", "uninstall"],
                          must_succeed: false
 
     # `brew uninstall` leaves these behind; `brew uninstall --zap` clears
@@ -106,9 +104,10 @@ homebrew_casks:
     zap:
       trash:
         - ~/.config/kerberoskeepalive
-        - ~/Library/Logs/KerberosKeepAlive
+        - ~/Library/Logs/kerberoskeepalive.log
+        - ~/Library/Logs/kerberoskeepalive.err.log
         # Fallback in case the uninstall hook above never ran.
-        - ~/Library/LaunchAgents/com.*.kerberoskeepalive.plist
+        - ~/Library/LaunchAgents/com.schretzi.kerberoskeepalive.plist
 
 release:
   github:

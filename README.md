@@ -12,7 +12,7 @@ cache (ccache) file that other Kerberos-aware tools can consume via
 - Manage multiple named ticket "profiles" from a single YAML config.
 - `status` / `init` / `refresh` for on-demand inspection and (re)acquisition.
 - `daemon` mode that polls and reacquires tickets before they expire,
-  installable as a per-user macOS LaunchAgent (`daemon install`).
+  installable as a macOS LaunchAgent (`service install`).
 - Passwords are looked up read-only from the macOS Keychain by
   service+account — this tool never creates or modifies Keychain items.
 
@@ -74,9 +74,13 @@ kerberoskeepalive refresh
 # Run the poll loop in the foreground (this is what the LaunchAgent invokes)
 kerberoskeepalive daemon
 
-# Install/uninstall the LaunchAgent that runs `daemon` at login
-kerberoskeepalive daemon install
-kerberoskeepalive daemon uninstall
+# Manage the LaunchAgent that runs `daemon` at login
+kerberoskeepalive service install
+kerberoskeepalive service uninstall
+kerberoskeepalive service start
+kerberoskeepalive service stop
+kerberoskeepalive service restart
+kerberoskeepalive service status
 ```
 
 All commands accept `--config <path>` (default
@@ -93,16 +97,24 @@ running any command sets up background refreshing. That is a deliberate,
 explicit step:
 
 ```sh
-kerberoskeepalive daemon install
+kerberoskeepalive service install
 ```
 
 This validates your config (refusing to install if it's invalid), then writes
-a **per-user LaunchAgent** to
-`~/Library/LaunchAgents/com.<username>.kerberoskeepalive.plist` and loads it
-with `launchctl bootstrap gui/<uid>`. The plist points at the absolute path of
-the binary you ran the command from, and at the `--config` path you passed
-(so pass `--config` here if you don't use the default). Re-running the command
-is safe — it unloads and reloads.
+a **LaunchAgent** to
+`~/Library/LaunchAgents/com.schretzi.kerberoskeepalive.plist` and loads it
+with `launchctl bootstrap gui/<uid>`. The plist points at the path of the
+binary you ran the command from, and at the `--config` path you passed (so
+pass `--config` here if you don't use the default). Re-running the command is
+safe — it unloads and reloads, which is also how you apply a plist change.
+
+Symlinks are deliberately not resolved when recording the binary path: a
+Homebrew cask keeps the real binary under
+`/opt/homebrew/Caskroom/kerberoskeepalive/<version>/`, and resolving would pin
+the plist to a version the next `brew upgrade` deletes.
+
+`service` always means this launchd job. `daemon` is the foreground process
+that job runs — the two are never the same word.
 
 From then on `kerberoskeepalive daemon` starts at every login and is restarted
 by launchd if it exits non-zero. See [Logs](#logs) for where it writes.
@@ -118,7 +130,7 @@ it — the daemon runs unattended and cannot.
 To stop and remove it:
 
 ```sh
-kerberoskeepalive daemon uninstall
+kerberoskeepalive service uninstall
 ```
 
 `brew uninstall kerberoskeepalive` also runs this automatically, so the agent
@@ -127,29 +139,34 @@ kerberoskeepalive` additionally removes your config and logs.
 
 ### Logs
 
-Everything lives in `~/Library/Logs/KerberosKeepAlive/`:
+Logs live directly in `~/Library/Logs/`, named after the binary:
 
 | File | Contents |
 | --- | --- |
-| `daemon.log` | The daemon's own log — this is the one to read. Rotated. |
-| `daemon-<timestamp>.log.gz` | Rotated older logs. |
-| `launchd.err.log` | Crash capture only: panics, and failures before logging starts. Normally empty. |
-| `launchd.out.log` | Same, for stdout. Normally empty. |
+| `kerberoskeepalive.log` | The daemon's own log — this is the one to read. |
+| `kerberoskeepalive.err.log` | Crash capture only: panics, and failures before logging starts. Normally empty. |
 
 ```sh
-tail -f ~/Library/Logs/KerberosKeepAlive/daemon.log
+tail -f ~/Library/Logs/kerberoskeepalive.log
 ```
 
-`daemon.log` rotates because a KDC you can't reach — VPN down, laptop off the
-corporate network — logs two lines every poll for as long as that lasts. The
-defaults keep at most 5 MB plus 3 gzipped backups, dropping anything older
-than 28 days; all four knobs are configurable under `daemon.log` in the config
-(see [`testdata/config.example.yaml`](testdata/config.example.yaml)). Like
-`poll_interval`, changes take effect on daemon restart.
+Rotation matters here because a KDC you can't reach — VPN down, laptop off the
+corporate network — logs two lines every poll for as long as that lasts.
 
-If you installed the LaunchAgent before this was added, re-run
-`kerberoskeepalive daemon install` to pick up the new plist, and delete the
-stale `daemon.{out,err}.log` files.
+Rotation is handled by macOS's own `newsyslog`, not by the daemon: install
+`/etc/newsyslog.d/kerberoskeepalive.conf` (there is a copy in the MacbookSetup
+repo) and `com.apple.newsyslog` will cap the file hourly. The config has no
+rotation knobs.
+
+`newsyslog` rotates by *renaming*, and launchd does not reopen a job's log
+when that happens — a daemon holding the fd would go on writing into the
+archive while the live file stayed empty forever. `internal/logfile` handles
+this: it re-stats the path and reopens when the inode it holds is no longer
+the one there.
+
+If you installed the LaunchAgent before this changed, run
+`kerberoskeepalive service install` to pick up the new plist, then delete the
+stale `~/Library/Logs/KerberosKeepAlive/` directory.
 
 ## Development
 
