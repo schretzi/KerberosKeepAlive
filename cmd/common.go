@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kerberoskeepalive/internal/config"
-	"kerberoskeepalive/internal/manager"
+	"github.com/schretzi/kerberoskeepalive/internal/config"
+	"github.com/schretzi/kerberoskeepalive/internal/manager"
 )
 
 func loadConfig() (*config.Config, error) {

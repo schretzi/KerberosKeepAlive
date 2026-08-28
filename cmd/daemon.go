@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kerberoskeepalive/internal/daemon"
-	"kerberoskeepalive/internal/launchagent"
+	"github.com/schretzi/kerberoskeepalive/internal/daemon"
+	"github.com/schretzi/kerberoskeepalive/internal/launchagent"
 )
 
 var daemonCmd = &cobra.Command{

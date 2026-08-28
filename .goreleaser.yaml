@@ -23,9 +23,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X kerberoskeepalive/cmd.version={{ .Version }}
-      - -X kerberoskeepalive/cmd.commit={{ .Commit }}
-      - -X kerberoskeepalive/cmd.date={{ .Date }}
+      - -X github.com/schretzi/kerberoskeepalive/cmd.version={{ .Version }}
+      - -X github.com/schretzi/kerberoskeepalive/cmd.commit={{ .Commit }}
+      - -X github.com/schretzi/kerberoskeepalive/cmd.date={{ .Date }}
 
 archives:
   - id: default

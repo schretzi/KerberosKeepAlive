@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kerberoskeepalive/internal/krb"
+	"github.com/schretzi/kerberoskeepalive/internal/krb"
 )
 
 var statusCmd = &cobra.Command{

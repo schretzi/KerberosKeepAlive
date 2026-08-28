@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"kerberoskeepalive/internal/config"
+	"github.com/schretzi/kerberoskeepalive/internal/config"
 )
 
 // setupLogging points the standard logger at a size-rotating file so an

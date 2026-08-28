@@ -7,9 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	"kerberoskeepalive/internal/config"
-	"kerberoskeepalive/internal/keychain"
-	"kerberoskeepalive/internal/krb"
+	"github.com/schretzi/kerberoskeepalive/internal/config"
+	"github.com/schretzi/kerberoskeepalive/internal/keychain"
+	"github.com/schretzi/kerberoskeepalive/internal/krb"
 )
 
 // AcquireProfile looks up p's password in the Keychain and runs kinit to

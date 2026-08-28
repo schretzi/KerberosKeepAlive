@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	"kerberoskeepalive/internal/config"
-	"kerberoskeepalive/internal/manager"
+	"github.com/schretzi/kerberoskeepalive/internal/config"
+	"github.com/schretzi/kerberoskeepalive/internal/manager"
 )
 
 // Run loads configPath and polls every selected profile's ticket (all

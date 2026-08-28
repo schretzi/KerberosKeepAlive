@@ -1,6 +1,6 @@
 package main
 
-import "kerberoskeepalive/cmd"
+import "github.com/schretzi/kerberoskeepalive/cmd"
 
 func main() {
 	cmd.Execute()

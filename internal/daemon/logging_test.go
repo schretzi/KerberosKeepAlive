@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"kerberoskeepalive/internal/config"
+	"github.com/schretzi/kerberoskeepalive/internal/config"
 )
 
 func logCfg(t *testing.T, path string, maxSizeMB, maxBackups int) *config.Config {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra/doc"
 
-	"kerberoskeepalive/cmd"
+	"github.com/schretzi/kerberoskeepalive/cmd"
 )
 
 func main() {

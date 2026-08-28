@@ -13,7 +13,7 @@ import (
 	"strings"
 	"text/template"
 
-	"kerberoskeepalive/internal/config"
+	"github.com/schretzi/kerberoskeepalive/internal/config"
 )
 
 const plistTemplateSrc = `<?xml version="1.0" encoding="UTF-8"?>

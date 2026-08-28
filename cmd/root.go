@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kerberoskeepalive/internal/config"
+	"github.com/schretzi/kerberoskeepalive/internal/config"
 )
 
 var (

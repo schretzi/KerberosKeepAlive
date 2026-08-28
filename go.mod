@@ -1,4 +1,4 @@
-module kerberoskeepalive
+module github.com/schretzi/kerberoskeepalive
 
 go 1.26.6
 
