@@ -16,4 +16,5 @@ Manage and keep macOS Kerberos tickets alive
 * [kerberoskeepalive init](kerberoskeepalive_init.md)	 - Acquire a fresh ticket now for the configured profile(s) (first-time setup)
 * [kerberoskeepalive refresh](kerberoskeepalive_refresh.md)	 - Force re-acquire a ticket now, regardless of current expiry
 * [kerberoskeepalive status](kerberoskeepalive_status.md)	 - Show status of configured tickets
+* [kerberoskeepalive version](kerberoskeepalive_version.md)	 - Print the kerberoskeepalive version, build info and licence
 

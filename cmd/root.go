@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
-
 	"github.com/schretzi/kerberoskeepalive/internal/config"
+	"github.com/schretzi/kerberoskeepalive/internal/version"
+
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -15,13 +16,15 @@ var (
 	profiles   []string
 )
 
-// Set via -ldflags by goreleaser (see .goreleaser.yaml); "dev" for local
-// `go build`/`go run`.
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
-)
+// appName is the binary name: it drives the launchd label, the log file
+// names and the `version` output.
+const appName = "kerberoskeepalive"
+
+// licenseNotice is printed by `kerberoskeepalive version`.
+const licenseNotice = `Copyright (C) 2026 Schretzi
+License: MIT <https://opensource.org/licenses/MIT>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.`
 
 var rootCmd = &cobra.Command{
 	Use:           "kerberoskeepalive",
@@ -50,5 +53,8 @@ func init() {
 	// Avoid a generation-timestamp footer that would otherwise churn every
 	// time docs/ is regenerated with no real content change.
 	rootCmd.DisableAutoGenTag = true
-	rootCmd.Version = fmt.Sprintf("%s (commit %s, built %s)", version, commit, date)
+
+	// `--version` and `version` report the same thing, from the same place.
+	rootCmd.Version = version.String(appName)
+	rootCmd.AddCommand(version.NewCommand(appName, licenseNotice))
 }
