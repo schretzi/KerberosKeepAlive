@@ -263,3 +263,177 @@ profiles:
 		t.Fatalf("SelectProfiles([nope]) succeeded, want error")
 	}
 }
+
+func TestNormalizeCCache(t *testing.T) {
+	cases := []struct {
+		name, spec, want string
+	}{
+		{"api bare", "API", CCacheAPI},
+		{"api with colon", "API:", CCacheAPI},
+		{"file prefixed", "FILE:/Users/jdoe/.krb5cc/corp", "FILE:/Users/jdoe/.krb5cc/corp"},
+		{"bare absolute path", "/Users/jdoe/.krb5cc/corp", "FILE:/Users/jdoe/.krb5cc/corp"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := normalizeCCache(tc.spec)
+			if err != nil {
+				t.Fatalf("normalizeCCache(%q) returned error: %v", tc.spec, err)
+			}
+			if got != tc.want {
+				t.Errorf("normalizeCCache(%q) = %q, want %q", tc.spec, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeCCacheErrors(t *testing.T) {
+	// A named API cache is the trap worth catching early: it looks reasonable
+	// but macOS keys API caches by UUID, so klist rejects it at runtime.
+	for _, spec := range []string{"", "API:corp", "FILE:relative/path", "relative/path", "KCM:", "MEMORY:x"} {
+		if got, err := normalizeCCache(spec); err == nil {
+			t.Errorf("normalizeCCache(%q) = %q, want error", spec, got)
+		}
+	}
+}
+
+// The pre-API spelling must keep loading, since a live config and an
+// installed LaunchAgent predate the rename.
+func TestLoadDeprecatedCCachePathStillWorks(t *testing.T) {
+	cfg, err := Load(writeTemp(t, `
+profiles:
+  - name: corp
+    principal: jdoe@CORP.EXAMPLE.COM
+    keychain: {service: s, account: a}
+    ccache_path: /Users/jdoe/.krb5cc/corp
+    refresh_threshold: 30m
+`))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	p := cfg.Profiles[0]
+	if got, want := p.CCache, "FILE:/Users/jdoe/.krb5cc/corp"; got != want {
+		t.Errorf("CCache = %q, want %q", got, want)
+	}
+	if p.UsesAPICache() {
+		t.Error("UsesAPICache() = true for a FILE ccache")
+	}
+	if got, want := p.CCacheFilePath(), "/Users/jdoe/.krb5cc/corp"; got != want {
+		t.Errorf("CCacheFilePath() = %q, want %q", got, want)
+	}
+}
+
+func TestLoadAPIProfile(t *testing.T) {
+	cfg, err := Load(writeTemp(t, `
+profiles:
+  - name: corp
+    principal: jdoe@CORP.EXAMPLE.COM
+    keychain: {service: s, account: a}
+    ccache: API
+    ticket_lifetime: 3h
+    refresh_threshold: 30m
+`))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	p := cfg.Profiles[0]
+	if !p.UsesAPICache() {
+		t.Error("UsesAPICache() = false, want true")
+	}
+	if got := p.CCacheFilePath(); got != "" {
+		t.Errorf("CCacheFilePath() = %q, want empty for an API cache", got)
+	}
+	if got, want := p.TicketLifetime.Duration(), 3*time.Hour; got != want {
+		t.Errorf("ticket_lifetime = %v, want %v", got, want)
+	}
+}
+
+func TestValidateCCacheAndLifetimeErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+	}{
+		{"missing ccache", `
+profiles:
+  - name: corp
+    principal: jdoe@REALM
+    keychain: {service: s, account: a}
+    refresh_threshold: 5m
+`},
+		{"both ccache spellings", `
+profiles:
+  - name: corp
+    principal: jdoe@REALM
+    keychain: {service: s, account: a}
+    ccache: API
+    ccache_path: /tmp/x
+    refresh_threshold: 5m
+`},
+		{"named api cache", `
+profiles:
+  - name: corp
+    principal: jdoe@REALM
+    keychain: {service: s, account: a}
+    ccache: API:corp
+    refresh_threshold: 5m
+`},
+		{"two profiles claim the default api cache", `
+profiles:
+  - name: corp
+    principal: jdoe@REALM
+    keychain: {service: s, account: a}
+    ccache: API
+    refresh_threshold: 5m
+  - name: other
+    principal: jdoe@REALM2
+    keychain: {service: s2, account: a2}
+    ccache: API
+    refresh_threshold: 5m
+`},
+		{"threshold equals lifetime", `
+profiles:
+  - name: corp
+    principal: jdoe@REALM
+    keychain: {service: s, account: a}
+    ccache: API
+    ticket_lifetime: 3h
+    refresh_threshold: 3h
+`},
+		{"threshold exceeds lifetime", `
+profiles:
+  - name: corp
+    principal: jdoe@REALM
+    keychain: {service: s, account: a}
+    ccache: API
+    ticket_lifetime: 3h
+    refresh_threshold: 4h
+`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := Load(writeTemp(t, tc.yaml)); err == nil {
+				t.Error("Load accepted an invalid config, want error")
+			}
+		})
+	}
+}
+
+// One API profile alongside FILE profiles is fine; only a second API profile
+// is a conflict.
+func TestValidateAllowsAPIAlongsideFileProfiles(t *testing.T) {
+	if _, err := Load(writeTemp(t, `
+profiles:
+  - name: corp
+    principal: jdoe@REALM
+    keychain: {service: s, account: a}
+    ccache: API
+    ticket_lifetime: 3h
+    refresh_threshold: 30m
+  - name: other
+    principal: jdoe@REALM2
+    keychain: {service: s2, account: a2}
+    ccache: /tmp/other
+    refresh_threshold: 30m
+`)); err != nil {
+		t.Errorf("Load rejected a valid mixed-ccache config: %v", err)
+	}
+}

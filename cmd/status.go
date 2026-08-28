@@ -29,7 +29,7 @@ var statusCmd = &cobra.Command{
 
 		var anyBad bool
 		for _, p := range selected {
-			st, err := krb.ReadStatus(p.CCachePath)
+			st, err := krb.ReadStatus(p.CCache)
 			var state, expires, remaining string
 			switch {
 			case err != nil:
@@ -47,7 +47,7 @@ var statusCmd = &cobra.Command{
 				expires = st.EndTime.Local().Format(time.RFC3339)
 				remaining = st.Remaining.Round(time.Second).String()
 			}
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", p.Name, p.Principal, state, expires, remaining, p.CCachePath)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", p.Name, p.Principal, state, expires, remaining, p.CCache)
 		}
 		_ = w.Flush()
 

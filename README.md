@@ -3,9 +3,10 @@
 A macOS CLI and background daemon that keeps one or more Kerberos tickets
 refreshed automatically. Ticket passwords are read from existing macOS
 Keychain entries (never written by this tool), tickets are acquired via the
-system `kinit`, and each ticket is written to a standard Kerberos credential
-cache (ccache) file that other Kerberos-aware tools can consume via
-`KRB5CCNAME` / `klist -c`.
+system `kinit`, and each ticket lands in a standard Kerberos credential cache
+(ccache) that other Kerberos-aware tools consume — either the default
+in-memory GSSCred cache (`ccache: API`, the default and the recommended
+setting) or a `FILE:` cache on disk.
 
 ## Features
 
@@ -15,6 +16,37 @@ cache (ccache) file that other Kerberos-aware tools can consume via
   installable as a macOS LaunchAgent (`service install`).
 - Passwords are looked up read-only from the macOS Keychain by
   service+account — this tool never creates or modifies Keychain items.
+- Tickets are acquired non-renewable with a configurable lifetime, so a
+  leaked ccache expires on schedule and cannot be renewed.
+
+## Ticket storage and what it's worth stealing
+
+A credential cache holds your TGT *and its session key in the clear*. It is a
+bearer credential: whoever has the bytes can authenticate as you until the
+ticket expires, and an issued TGT cannot be revoked — changing your password
+does not invalidate it.
+
+That shapes two defaults:
+
+- **`ccache: API` (recommended).** Writes the default GSSCred cache, held in
+  memory by Apple's GSSCred daemon. Nothing at rest, nothing in Time Machine,
+  nothing valid after logout or reboot. GSS-API consumers — Alpaca, `curl
+  --negotiate`, Chrome — resolve it as the default credential with no
+  `KRB5CCNAME` plumbing. Note this is *not* an LSASS-style boundary: any
+  process running as you can still ask GSSCred for the ticket
+  (`kcc copy_cred_cache` does exactly that). It removes persistence and
+  casual file-read exfiltration, not same-uid access.
+- **Short, non-renewable lifetimes.** `ticket_lifetime: 3h` caps the useful
+  life of a leaked ticket. Renewability is never requested, so nobody can
+  extend a stolen ticket without your password — which is why the daemon
+  re-acquires from the Keychain rather than running `kinit -R`.
+
+`ccache: /absolute/path` (or `FILE:/absolute/path`) is still supported for
+anything that needs a real file. If you use it, consider
+`tmutil addexclusion` on the containing directory.
+
+There is no `API:name` form: macOS keys API caches by UUID, so only the
+default one can be targeted, and exactly one profile may claim it.
 
 ## Installation
 

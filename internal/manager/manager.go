@@ -5,6 +5,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/schretzi/kerberoskeepalive/internal/config"
@@ -13,22 +14,38 @@ import (
 )
 
 // AcquireProfile looks up p's password in the Keychain and runs kinit to
-// (re)acquire its ticket, writing the ccache to p.CCachePath.
+// (re)acquire its ticket, writing the credential cache named by p.CCache.
 func AcquireProfile(ctx context.Context, cfg *config.Config, p config.Profile) error {
 	password, err := keychain.LookupPassword(p.Keychain.Service, p.Keychain.Account)
 	if err != nil {
 		return fmt.Errorf("profile %s: %w", p.Name, err)
 	}
-	if err := krb.Acquire(ctx, p.Principal, p.CCachePath, password, cfg.Krb5ConfPath); err != nil {
+	err = krb.Acquire(ctx, krb.AcquireOptions{
+		Principal:    p.Principal,
+		CCache:       p.CCache,
+		Password:     password,
+		Krb5ConfPath: cfg.Krb5ConfPath,
+		Lifetime:     p.TicketLifetime.Duration(),
+	})
+	if err != nil {
 		return fmt.Errorf("profile %s: %w", p.Name, err)
 	}
 	return nil
 }
 
+// IsPermanent reports whether err will keep failing identically until the
+// user changes something — a rejected credential or a missing Keychain item,
+// as opposed to an unreachable KDC. Callers that retry on a timer must stop
+// on these: re-running kinit every poll against a stale password is how an
+// account gets locked out.
+func IsPermanent(err error) bool {
+	return errors.Is(err, krb.ErrCredentialRejected) || errors.Is(err, keychain.ErrNotFound)
+}
+
 // NeedsRefresh reports whether p's ticket is missing, expired, or within its
 // configured refresh threshold of expiring.
 func NeedsRefresh(p config.Profile) (bool, krb.TicketStatus, error) {
-	st, err := krb.ReadStatus(p.CCachePath)
+	st, err := krb.ReadStatus(p.CCache)
 	if err != nil {
 		return true, st, err
 	}

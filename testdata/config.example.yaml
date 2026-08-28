@@ -30,5 +30,41 @@ profiles:
       #   security add-generic-password -a jdoe -s KerberosKeepAlive-corp -w
       service: KerberosKeepAlive-corp
       account: jdoe
-    ccache_path: /Users/jdoe/.krb5cc/corp
+
+    # Where the credential cache goes. Two forms:
+    #
+    #   API                  the default GSSCred cache — in memory, owned by
+    #                        Apple's GSSCred daemon, never written to disk.
+    #                        Recommended: nothing survives logout or reboot,
+    #                        nothing lands in Time Machine, and GSS-API
+    #                        consumers (Alpaca, curl --negotiate, Chrome)
+    #                        resolve it as the default credential with no
+    #                        KRB5CCNAME plumbing.
+    #
+    #   /absolute/path       a FILE: cache, or write it as FILE:/absolute/path.
+    #                        Use only if something needs a real file. A FILE
+    #                        ccache is a bearer credential at rest: anyone who
+    #                        copies it can authenticate as you until it
+    #                        expires, and it cannot be revoked.
+    #
+    # Note there is no API:name form. macOS keys API caches by UUID, so only
+    # the default one can be targeted — which also means exactly one profile
+    # may use "API".
+    ccache: API
+
+    # Requested ticket lifetime, passed to kinit as --lifetime. Optional;
+    # omit to take the realm's default (commonly 10h). The KDC issues
+    # min(requested, account policy), so asking for less always works and
+    # asking for more silently does not.
+    #
+    # This is the ceiling on how long a leaked ticket stays usable. Tickets
+    # are acquired non-renewable on purpose — the daemon re-acquires from the
+    # Keychain password rather than renewing — so nothing can extend it.
+    ticket_lifetime: 3h
+
+    # Re-acquire once this much validity remains. Must be meaningfully below
+    # ticket_lifetime: the daemon refreshes every (lifetime - threshold), so
+    # 3h/30m re-acquires roughly every 2h30m. Setting it at or above the
+    # lifetime is rejected, because a freshly issued ticket would already
+    # read as due and every poll would fire a new AS-REQ.
     refresh_threshold: 30m

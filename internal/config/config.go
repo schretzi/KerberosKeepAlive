@@ -39,11 +39,79 @@ type LogConfig struct {
 // Profile is one managed Kerberos ticket: where its password comes from and
 // where its credential cache should be written.
 type Profile struct {
-	Name             string      `yaml:"name"`
-	Principal        string      `yaml:"principal"`
-	Keychain         KeychainRef `yaml:"keychain"`
-	CCachePath       string      `yaml:"ccache_path"`
-	RefreshThreshold Duration    `yaml:"refresh_threshold"`
+	Name      string      `yaml:"name"`
+	Principal string      `yaml:"principal"`
+	Keychain  KeychainRef `yaml:"keychain"`
+
+	// CCache names the credential cache to write, either CCacheAPI (the
+	// default in-memory GSSCred cache) or "FILE:/absolute/path". A bare
+	// absolute path is accepted and normalized to a FILE: spec.
+	CCache string `yaml:"ccache"`
+
+	// CCachePath is the pre-API spelling of CCache, kept so configs written
+	// before API caches were supported keep loading. When CCache is unset
+	// this is normalized into CCache as a FILE: spec.
+	//
+	// Deprecated: set CCache instead.
+	CCachePath string `yaml:"ccache_path"`
+
+	// TicketLifetime is passed to kinit as --lifetime. Optional: when zero,
+	// kinit is left to request the KDC's default (commonly 10h). Shortening
+	// it caps how long a stolen ccache stays usable, since these tickets are
+	// non-renewable — the daemon re-acquires from the Keychain password
+	// rather than renewing, so there is no renew_till ceiling to work around.
+	TicketLifetime Duration `yaml:"ticket_lifetime"`
+
+	// RefreshThreshold is how much remaining validity triggers a re-acquire.
+	// It must stay well below TicketLifetime: the daemon re-acquires every
+	// (lifetime - threshold), so a threshold near the lifetime turns every
+	// poll into a fresh AS-REQ.
+	RefreshThreshold Duration `yaml:"refresh_threshold"`
+}
+
+// CCacheAPI is the ccache spec selecting the user's default GSSCred cache:
+// the in-memory, per-session cache macOS uses by default, held by the
+// GSSCred daemon rather than written to disk.
+//
+// It is spelled without a UUID deliberately. macOS addresses individual API
+// caches by UUID (klist rejects "API:corp" with "failed to parse uuid"), so
+// there is no stable human-chosen name to target. Writing the *default*
+// cache is also what makes this useful: GSS-API consumers such as Alpaca ask
+// for the default credential, so they pick the ticket up with no KRB5CCNAME
+// plumbing. Only one profile may claim it — see Config.Validate.
+const CCacheAPI = "API"
+
+// UsesAPICache reports whether p targets the default GSSCred cache rather
+// than a file.
+func (p Profile) UsesAPICache() bool { return p.CCache == CCacheAPI }
+
+// CCacheFilePath returns the filesystem path behind p's FILE: ccache, or ""
+// when p uses the API cache.
+func (p Profile) CCacheFilePath() string {
+	if p.UsesAPICache() {
+		return ""
+	}
+	return strings.TrimPrefix(p.CCache, "FILE:")
+}
+
+// normalizeCCache canonicalizes a configured ccache spec into either
+// CCacheAPI or "FILE:/absolute/path".
+func normalizeCCache(spec string) (string, error) {
+	switch {
+	case spec == CCacheAPI, spec == "API:":
+		return CCacheAPI, nil
+	case strings.HasPrefix(spec, "API:"):
+		return "", fmt.Errorf("ccache %q: macOS addresses API caches by UUID, so a named one cannot be targeted; use %q for the default GSSCred cache", spec, CCacheAPI)
+	case strings.HasPrefix(spec, "FILE:"):
+		path := strings.TrimPrefix(spec, "FILE:")
+		if !filepath.IsAbs(path) {
+			return "", fmt.Errorf("ccache %q: FILE: path must be absolute", spec)
+		}
+		return "FILE:" + path, nil
+	case filepath.IsAbs(spec):
+		return "FILE:" + spec, nil
+	}
+	return "", fmt.Errorf("ccache %q: unsupported form, use %q, FILE:/absolute/path, or /absolute/path", spec, CCacheAPI)
 }
 
 // KeychainRef identifies an existing macOS Keychain generic-password item to
@@ -131,10 +199,38 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}
 	cfg.applyDefaults()
+	if err := cfg.normalize(); err != nil {
+		return nil, fmt.Errorf("validating config %s: %w", path, err)
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config %s: %w", path, err)
 	}
 	return &cfg, nil
+}
+
+// normalize canonicalizes each profile's ccache spec, folding the deprecated
+// ccache_path spelling into CCache. It runs before Validate so the rest of
+// the config package (and every consumer) only ever sees a normalized spec.
+func (c *Config) normalize() error {
+	for i := range c.Profiles {
+		p := &c.Profiles[i]
+		spec := p.CCache
+		switch {
+		case spec != "" && p.CCachePath != "":
+			return fmt.Errorf("profile %q: set either ccache or ccache_path, not both", p.Name)
+		case spec == "":
+			spec = p.CCachePath
+		}
+		if spec == "" {
+			return fmt.Errorf("profile %q: ccache is required", p.Name)
+		}
+		normalized, err := normalizeCCache(spec)
+		if err != nil {
+			return fmt.Errorf("profile %q: %w", p.Name, err)
+		}
+		p.CCache, p.CCachePath = normalized, ""
+	}
+	return nil
 }
 
 // applyDefaults fills in unset optional fields. Zero means "not configured"
@@ -155,6 +251,7 @@ func (c *Config) Validate() error {
 		return errors.New("no profiles configured")
 	}
 	seen := make(map[string]bool, len(c.Profiles))
+	var apiProfile string
 	for i, p := range c.Profiles {
 		if p.Name == "" {
 			return fmt.Errorf("profile %d: name is required", i)
@@ -169,11 +266,28 @@ func (c *Config) Validate() error {
 		if p.Keychain.Service == "" || p.Keychain.Account == "" {
 			return fmt.Errorf("profile %q: keychain.service and keychain.account are required", p.Name)
 		}
-		if !filepath.IsAbs(p.CCachePath) {
-			return fmt.Errorf("profile %q: ccache_path must be an absolute path", p.Name)
+		// Two profiles cannot both own the default GSSCred cache, and there
+		// is no second one to give the loser: macOS keys API caches by UUID,
+		// and GSS consumers resolve the default. Rejecting this is honest
+		// about a limit of the platform rather than of this tool.
+		if p.UsesAPICache() {
+			if apiProfile != "" {
+				return fmt.Errorf("profiles %q and %q both use ccache %q, but only one profile can own the default GSSCred cache; give one of them a FILE: ccache", apiProfile, p.Name, CCacheAPI)
+			}
+			apiProfile = p.Name
 		}
 		if p.RefreshThreshold.Duration() <= 0 {
 			return fmt.Errorf("profile %q: refresh_threshold must be > 0", p.Name)
+		}
+		if p.TicketLifetime.Duration() < 0 {
+			return fmt.Errorf("profile %q: ticket_lifetime must be > 0", p.Name)
+		}
+		// The daemon re-acquires every (lifetime - threshold). At threshold
+		// >= lifetime that interval is zero or negative, so a freshly issued
+		// ticket already reads as due for refresh and every poll fires a new
+		// AS-REQ — a self-inflicted password spray against the KDC.
+		if lifetime := p.TicketLifetime.Duration(); lifetime > 0 && p.RefreshThreshold.Duration() >= lifetime {
+			return fmt.Errorf("profile %q: refresh_threshold (%s) must be less than ticket_lifetime (%s), otherwise every poll re-acquires", p.Name, p.RefreshThreshold.Duration(), lifetime)
 		}
 	}
 	return nil
