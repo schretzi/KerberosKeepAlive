@@ -3,10 +3,10 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
-
 	"github.com/schretzi/kerberoskeepalive/internal/config"
 	"github.com/schretzi/kerberoskeepalive/internal/manager"
+
+	"github.com/spf13/cobra"
 )
 
 func loadConfig() (*config.Config, error) {

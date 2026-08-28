@@ -7,9 +7,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/spf13/cobra/doc"
-
 	"github.com/schretzi/kerberoskeepalive/cmd"
+
+	"github.com/spf13/cobra/doc"
 )
 
 func main() {

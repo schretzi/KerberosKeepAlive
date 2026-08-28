@@ -1,19 +1,20 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"text/tabwriter"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/schretzi/kerberoskeepalive/internal/krb"
+
+	"github.com/spf13/cobra"
 )
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show status of configured tickets",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
 			return err
@@ -51,7 +52,7 @@ var statusCmd = &cobra.Command{
 		_ = w.Flush()
 
 		if anyBad {
-			return fmt.Errorf("one or more profiles are missing, invalid, or expired")
+			return errors.New("one or more profiles are missing, invalid, or expired")
 		}
 		return nil
 	},
