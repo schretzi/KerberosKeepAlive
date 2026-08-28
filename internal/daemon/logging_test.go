@@ -6,21 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/schretzi/kerberoskeepalive/internal/config"
 )
 
-func logCfg(t *testing.T, path string, maxSizeMB, maxBackups int) *config.Config {
-	t.Helper()
-	compress := false
+func logCfg(path string) *config.Config {
 	return &config.Config{
 		Daemon: config.DaemonConfig{
-			Log: config.LogConfig{
-				Path:       path,
-				MaxSizeMB:  maxSizeMB,
-				MaxBackups: maxBackups,
-				Compress:   &compress,
-			},
+			Log: config.LogConfig{Path: path},
 		},
 	}
 }
@@ -34,9 +28,9 @@ func restoreDefaultLogger(t *testing.T) {
 
 func TestSetupLoggingWritesToConfiguredPath(t *testing.T) {
 	restoreDefaultLogger(t)
-	path := filepath.Join(t.TempDir(), "daemon.log")
+	path := filepath.Join(t.TempDir(), "kerberoskeepalive.log")
 
-	closer, err := setupLogging(logCfg(t, path, 5, 3))
+	closer, err := setupLogging(logCfg(path))
 	if err != nil {
 		t.Fatalf("setupLogging: %v", err)
 	}
@@ -54,68 +48,11 @@ func TestSetupLoggingWritesToConfiguredPath(t *testing.T) {
 	}
 }
 
-// The whole point of the feature: a KDC that stays unreachable logs forever,
-// so the file must roll over instead of growing without bound.
-func TestSetupLoggingRotatesAndPrunes(t *testing.T) {
-	restoreDefaultLogger(t)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "daemon.log")
-
-	const maxBackups = 2
-	closer, err := setupLogging(logCfg(t, path, 1, maxBackups))
-	if err != nil {
-		t.Fatalf("setupLogging: %v", err)
-	}
-
-	// ~4 MB against a 1 MB cap, so it must roll several times and then start
-	// discarding the oldest backups.
-	line := strings.Repeat("x", 1024)
-	for range 4 * 1024 {
-		log.Print(line)
-	}
-	if err := closer.Close(); err != nil {
-		t.Fatalf("closing log: %v", err)
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading log dir: %v", err)
-	}
-	var active, backups int
-	for _, e := range entries {
-		switch {
-		case e.Name() == "daemon.log":
-			active++
-		case strings.HasPrefix(e.Name(), "daemon-"):
-			backups++
-		default:
-			t.Errorf("unexpected file in log dir: %s", e.Name())
-		}
-	}
-	if active != 1 {
-		t.Errorf("active log files = %d, want 1", active)
-	}
-	if backups == 0 {
-		t.Errorf("no rotated backups produced; the log never rolled over")
-	}
-	if backups > maxBackups {
-		t.Errorf("rotated backups = %d, want at most max_backups (%d)", backups, maxBackups)
-	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat active log: %v", err)
-	}
-	if info.Size() > 2*1024*1024 {
-		t.Errorf("active log is %d bytes, want it capped near 1 MB", info.Size())
-	}
-}
-
 func TestSetupLoggingCreatesMissingLogDirectory(t *testing.T) {
 	restoreDefaultLogger(t)
-	path := filepath.Join(t.TempDir(), "nested", "subdir", "daemon.log")
+	path := filepath.Join(t.TempDir(), "nested", "subdir", "kerberoskeepalive.log")
 
-	closer, err := setupLogging(logCfg(t, path, 5, 3))
+	closer, err := setupLogging(logCfg(path))
 	if err != nil {
 		t.Fatalf("setupLogging: %v", err)
 	}
@@ -126,5 +63,41 @@ func TestSetupLoggingCreatesMissingLogDirectory(t *testing.T) {
 
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("log file not created under a missing directory: %v", err)
+	}
+}
+
+// setupLogging must hand the standard logger a rotation-aware writer, not a
+// plain file: newsyslog rotates by renaming, and a plain *os.File would go on
+// filling the archive while the live log stayed empty.
+func TestSetupLoggingSurvivesRotation(t *testing.T) {
+	restoreDefaultLogger(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "kerberoskeepalive.log")
+
+	closer, err := setupLogging(logCfg(path))
+	if err != nil {
+		t.Fatalf("setupLogging: %v", err)
+	}
+	defer closer.Close()
+
+	log.Print("before rotation")
+	if err := os.Rename(path, filepath.Join(dir, "kerberoskeepalive.log.0")); err != nil {
+		t.Fatalf("simulating newsyslog rename: %v", err)
+	}
+
+	// logfile throttles its rotation check to once a second; wait it out
+	// rather than reaching into the writer's internals from another package.
+	time.Sleep(1100 * time.Millisecond)
+	log.Print("after rotation")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("live log was not recreated after rotation: %v", err)
+	}
+	if !strings.Contains(string(data), "after rotation") {
+		t.Errorf("post-rotation line did not land in the live log, got:\n%s", data)
+	}
+	if strings.Contains(string(data), "before rotation") {
+		t.Errorf("live log unexpectedly contains pre-rotation output:\n%s", data)
 	}
 }

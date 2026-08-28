@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,15 +24,16 @@ type DaemonConfig struct {
 	Log          LogConfig `yaml:"log"`
 }
 
-// LogConfig configures the daemon's own rotating log file. This is separate
-// from the launchd-captured stdout/stderr files, which only ever receive
-// crash output (panics, and failures before logging is set up).
+// LogConfig configures the daemon's own log file. This is separate from the
+// launchd-captured stderr file, which only ever receives crash output (panics,
+// and failures before logging is set up).
+//
+// There are no rotation knobs here: rotation belongs to newsyslog, configured
+// in MacbookSetup under etc/newsyslog.d/kerberoskeepalive.conf. The daemon's
+// only obligation is to notice when newsyslog has rotated the file out from
+// under it, which internal/logfile handles.
 type LogConfig struct {
-	Path       string `yaml:"path"`
-	MaxSizeMB  int    `yaml:"max_size_mb"`
-	MaxBackups int    `yaml:"max_backups"`
-	MaxAgeDays int    `yaml:"max_age_days"`
-	Compress   *bool  `yaml:"compress"`
+	Path string `yaml:"path"`
 }
 
 // Profile is one managed Kerberos ticket: where its password comes from and
@@ -79,13 +81,7 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-const (
-	defaultPollInterval = 60 * time.Second
-
-	defaultLogMaxSizeMB  = 5
-	defaultLogMaxBackups = 3
-	defaultLogMaxAgeDays = 28
-)
+const defaultPollInterval = 60 * time.Second
 
 // DefaultPath returns the conventional config path, written with a literal
 // leading "~" so it stays portable in --help output and generated docs
@@ -96,8 +92,11 @@ func DefaultPath() string {
 
 // DefaultLogPath returns the conventional daemon log path, written with a
 // literal leading "~" for the same reason as DefaultPath.
+//
+// Flat in ~/Library/Logs and named after the binary, per
+// MacbookSetup/CONVENTIONS.md — not a per-project subdirectory.
 func DefaultLogPath() string {
-	return "~/Library/Logs/KerberosKeepAlive/daemon.log"
+	return "~/Library/Logs/kerberoskeepalive.log"
 }
 
 // ExpandPath resolves a leading "~" or "~/..." in path against the current
@@ -141,7 +140,6 @@ func Load(path string) (*Config, error) {
 // applyDefaults fills in unset optional fields. Zero means "not configured"
 // for every field here, so an explicit 0 in YAML is indistinguishable from
 // omission — deliberate, since 0 is not a useful value for any of them.
-// Compress is a *bool precisely because its default is true.
 func (c *Config) applyDefaults() {
 	if c.Daemon.PollInterval.Duration() == 0 {
 		c.Daemon.PollInterval = Duration(defaultPollInterval)
@@ -149,34 +147,12 @@ func (c *Config) applyDefaults() {
 	if c.Daemon.Log.Path == "" {
 		c.Daemon.Log.Path = DefaultLogPath()
 	}
-	if c.Daemon.Log.MaxSizeMB == 0 {
-		c.Daemon.Log.MaxSizeMB = defaultLogMaxSizeMB
-	}
-	if c.Daemon.Log.MaxBackups == 0 {
-		c.Daemon.Log.MaxBackups = defaultLogMaxBackups
-	}
-	if c.Daemon.Log.MaxAgeDays == 0 {
-		c.Daemon.Log.MaxAgeDays = defaultLogMaxAgeDays
-	}
-	if c.Daemon.Log.Compress == nil {
-		compress := true
-		c.Daemon.Log.Compress = &compress
-	}
 }
 
 // Validate checks the config for structural and semantic errors.
 func (c *Config) Validate() error {
-	if c.Daemon.Log.MaxSizeMB < 0 {
-		return fmt.Errorf("daemon.log.max_size_mb must be >= 0")
-	}
-	if c.Daemon.Log.MaxBackups < 0 {
-		return fmt.Errorf("daemon.log.max_backups must be >= 0")
-	}
-	if c.Daemon.Log.MaxAgeDays < 0 {
-		return fmt.Errorf("daemon.log.max_age_days must be >= 0")
-	}
 	if len(c.Profiles) == 0 {
-		return fmt.Errorf("no profiles configured")
+		return errors.New("no profiles configured")
 	}
 	seen := make(map[string]bool, len(c.Profiles))
 	for i, p := range c.Profiles {

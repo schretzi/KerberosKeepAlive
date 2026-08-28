@@ -4,22 +4,24 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
-
-	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/schretzi/kerberoskeepalive/internal/config"
+	"github.com/schretzi/kerberoskeepalive/internal/logfile"
 )
 
-// setupLogging points the standard logger at a size-rotating file so an
-// unreachable KDC — which produces two lines per poll indefinitely — can't
-// grow the log without bound.
+// setupLogging points the standard logger at the daemon's own log file.
 //
-// launchd's StandardOutPath/StandardErrorPath still capture this process's
-// raw stdout/stderr, but once this returns, those files only receive output
-// that bypasses the logger entirely: panics, and anything written before
-// setup. The rotating file is the log to read.
+// Rotation is newsyslog's job (etc/newsyslog.d/kerberoskeepalive.conf in
+// MacbookSetup), not this process's: an unreachable KDC produces two lines per
+// poll indefinitely, and newsyslog caps that by size. Because newsyslog
+// rotates by renaming, the writer re-stats the path and reopens when the file
+// moves — otherwise the daemon would keep writing into the archived inode and
+// the live log would stay empty forever.
+//
+// launchd's StandardErrorPath still captures this process's raw stderr, but
+// once this returns those files only receive output that bypasses the logger
+// entirely: panics, and anything written before setup. This is the log to
+// read.
 //
 // The returned closer flushes and releases the file.
 func setupLogging(cfg *config.Config) (io.Closer, error) {
@@ -27,18 +29,10 @@ func setupLogging(cfg *config.Config) (io.Closer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving daemon.log.path %s: %w", cfg.Daemon.Log.Path, err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, fmt.Errorf("creating log directory %s: %w", filepath.Dir(path), err)
+	w, err := logfile.Open(path)
+	if err != nil {
+		return nil, err
 	}
-
-	rotator := &lumberjack.Logger{
-		Filename:   path,
-		MaxSize:    cfg.Daemon.Log.MaxSizeMB,
-		MaxBackups: cfg.Daemon.Log.MaxBackups,
-		MaxAge:     cfg.Daemon.Log.MaxAgeDays,
-		Compress:   *cfg.Daemon.Log.Compress,
-		LocalTime:  true,
-	}
-	log.SetOutput(rotator)
-	return rotator, nil
+	log.SetOutput(w)
+	return w, nil
 }

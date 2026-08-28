@@ -11,21 +11,16 @@ daemon:
   # `daemon install` again); profiles/thresholds below can be edited live.
   poll_interval: 60s
 
-  # The daemon's own rotating log. Every value below is optional and shown
-  # here at its default. Like poll_interval, changes need a daemon restart.
+  # The daemon's own log. Optional, shown here at its default. Like
+  # poll_interval, a change needs a daemon restart.
   #
-  # Rotation matters because an unreachable KDC (VPN down, laptop off the
-  # corporate network) logs two lines per poll for as long as it lasts.
+  # There are no rotation settings here: newsyslog owns rotation, via
+  # /etc/newsyslog.d/kerberoskeepalive.conf. That matters because an
+  # unreachable KDC (VPN down, laptop off the corporate network) logs two
+  # lines per poll for as long as it lasts. The daemon's only job is to
+  # notice when newsyslog has renamed the file, and reopen.
   log:
-    path: ~/Library/Logs/KerberosKeepAlive/daemon.log
-    # Rotate once the active file reaches this size.
-    max_size_mb: 5
-    # Keep at most this many rotated files (0 = keep all).
-    max_backups: 3
-    # Delete rotated files older than this many days (0 = never by age).
-    max_age_days: 28
-    # gzip rotated files.
-    compress: true
+    path: ~/Library/Logs/kerberoskeepalive.log
 
 profiles:
   - name: corp

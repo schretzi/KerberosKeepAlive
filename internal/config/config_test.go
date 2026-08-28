@@ -91,37 +91,34 @@ func TestLoadDefaultsLog(t *testing.T) {
 	if got.Path != DefaultLogPath() {
 		t.Errorf("log.path = %q, want %q", got.Path, DefaultLogPath())
 	}
-	if got.MaxSizeMB != defaultLogMaxSizeMB {
-		t.Errorf("log.max_size_mb = %d, want %d", got.MaxSizeMB, defaultLogMaxSizeMB)
-	}
-	if got.MaxBackups != defaultLogMaxBackups {
-		t.Errorf("log.max_backups = %d, want %d", got.MaxBackups, defaultLogMaxBackups)
-	}
-	if got.MaxAgeDays != defaultLogMaxAgeDays {
-		t.Errorf("log.max_age_days = %d, want %d", got.MaxAgeDays, defaultLogMaxAgeDays)
-	}
-	if got.Compress == nil || !*got.Compress {
-		t.Errorf("log.compress = %v, want true", got.Compress)
+}
+
+// The default log path is flat in ~/Library/Logs and named after the binary,
+// per MacbookSetup/CONVENTIONS.md - not a per-project subdirectory.
+func TestDefaultLogPathFollowsConvention(t *testing.T) {
+	if got, want := DefaultLogPath(), "~/Library/Logs/kerberoskeepalive.log"; got != want {
+		t.Errorf("DefaultLogPath() = %q, want %q", got, want)
 	}
 }
 
-// compress defaults to true, so an explicit `false` must survive - the
-// reason LogConfig.Compress is a *bool rather than a bool.
-func TestLoadLogCompressFalseIsRespected(t *testing.T) {
+func TestLoadLogPathOverride(t *testing.T) {
 	cfg, err := Load(writeTemp(t, `
 daemon:
   log:
-    compress: false
+    path: /tmp/custom.log
 `+minimalProfile))
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.Daemon.Log.Compress == nil || *cfg.Daemon.Log.Compress {
-		t.Errorf("log.compress = %v, want false", cfg.Daemon.Log.Compress)
+	if got := cfg.Daemon.Log.Path; got != "/tmp/custom.log" {
+		t.Errorf("log.path = %q, want the configured override", got)
 	}
 }
 
-func TestLoadLogOverrides(t *testing.T) {
+// Rotation belongs to newsyslog, so the config carries no rotation knobs. A
+// config still holding the old ones must not be rejected - they are simply
+// ignored, so an unmigrated file keeps working.
+func TestLoadIgnoresRetiredRotationKeys(t *testing.T) {
 	cfg, err := Load(writeTemp(t, `
 daemon:
   log:
@@ -129,13 +126,13 @@ daemon:
     max_size_mb: 1
     max_backups: 9
     max_age_days: 7
+    compress: false
 `+minimalProfile))
 	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
+		t.Fatalf("Load rejected a config with retired rotation keys: %v", err)
 	}
-	got := cfg.Daemon.Log
-	if got.Path != "/tmp/custom.log" || got.MaxSizeMB != 1 || got.MaxBackups != 9 || got.MaxAgeDays != 7 {
-		t.Errorf("log = %+v, want the configured overrides", got)
+	if got := cfg.Daemon.Log.Path; got != "/tmp/custom.log" {
+		t.Errorf("log.path = %q, want /tmp/custom.log", got)
 	}
 }
 
@@ -145,9 +142,6 @@ func TestValidateErrors(t *testing.T) {
 		yaml string
 	}{
 		{"no profiles", `profiles: []`},
-		{"negative log max_size_mb", "daemon:\n  log:\n    max_size_mb: -1\n" + minimalProfile},
-		{"negative log max_backups", "daemon:\n  log:\n    max_backups: -1\n" + minimalProfile},
-		{"negative log max_age_days", "daemon:\n  log:\n    max_age_days: -1\n" + minimalProfile},
 		{"missing name", `
 profiles:
   - principal: jdoe@REALM
