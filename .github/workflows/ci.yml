@@ -17,7 +17,8 @@ permissions:
   contents: read
 
 env:
-  GOLANGCI_VERSION: v2.12.2
+  GOLANGCI_VERSION: v2.13.2
+  GOSEC_VERSION: v2.28.0
 
 jobs:
   build-and-test:
@@ -71,9 +72,15 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: securego/gosec@v2.28.0
-        with:
-          args: ./...
+      # NOT securego/gosec@vX: that action is a Docker container action, and
+      # GitHub only runs those on Linux - on a macOS runner it fails outright
+      # with "Container action is only supported on Linux" before running
+      # anything. Pinned to GOSEC_VERSION so the Makefile and CI cannot drift.
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@${{ env.GOSEC_VERSION }}
+
+      - name: Run gosec
+        run: gosec -quiet ./...
 
   dependencies:
     name: Dependency check (govulncheck + go mod tidy/verify)
