@@ -404,7 +404,13 @@ func (s *Service) Uninstall() error {
 	return nil
 }
 
-// Start bootstraps the job into launchd.
+// Start bootstraps the job into launchd. Already being loaded is not an
+// error, mirroring Stop: launchd answers a second bootstrap of the same
+// label with "Bootstrap failed: 5: Input/output error", which says nothing
+// about the job and everything about it already being there. Callers that
+// start a service as one step of a larger sequence - macswitcher starting
+// this from a context switch, for one - would otherwise abort halfway
+// through on a machine where the agent was simply already running.
 func (s *Service) Start() error {
 	plistPath, err := s.PlistPath()
 	if err != nil {
@@ -415,6 +421,9 @@ func (s *Service) Start() error {
 			return fmt.Errorf("%s is not installed (no plist at %s); run `%s service install` first", s.Label(), plistPath, s.name)
 		}
 		return err
+	}
+	if s.Loaded() {
+		return nil
 	}
 	if out, err := s.run("bootstrap", guiDomain(), plistPath); err != nil {
 		return fmt.Errorf("launchctl bootstrap %s: %w: %s", s.Label(), err, out)

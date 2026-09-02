@@ -387,6 +387,27 @@ func TestStartSurfacesBootstrapFailure(t *testing.T) {
 	}
 }
 
+func TestStartIsANoOpWhenAlreadyLoaded(t *testing.T) {
+	fake := &fakeLaunchctl{}
+	s, _ := installedService(t, fake)
+	if _, err := s.Install(); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	fake.calls = nil
+
+	// launchd answers a second bootstrap of a label it already has with
+	// "Bootstrap failed: 5", which would otherwise abort any caller that
+	// starts this as one step of a longer sequence.
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start on an already loaded job: %v", err)
+	}
+	for _, call := range fake.calls {
+		if strings.HasPrefix(call, "bootstrap") {
+			t.Error("Start bootstrapped a job that was already loaded")
+		}
+	}
+}
+
 func TestUninstallRemovesThePlist(t *testing.T) {
 	fake := &fakeLaunchctl{loaded: true}
 	s, home := installedService(t, fake)
